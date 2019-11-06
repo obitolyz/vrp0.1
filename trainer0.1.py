@@ -20,7 +20,7 @@ parser = argparse.ArgumentParser(description='vrptw with RL')
 parser.add_argument('--dist_coef', default=1.0, type=float)
 parser.add_argument('--over_cap_coef', default=0.1, type=float)
 parser.add_argument('--over_time_coef', default=0.1, type=float)
-parser.add_argument('--cuda_device', default='0', type=str)
+parser.add_argument('--cuda_device', default='5', type=str)
 parser.add_argument('--num_epoch', default=100, type=int)
 parser.add_argument('--num_node', default=21, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
@@ -40,7 +40,7 @@ os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device
 # parameters
 batch_size = opt.batch_size
 train_size = opt.train_size
-seq_len = opt.num_node  # service_num and depot num
+seq_len = opt.num_node   # service_num and depot num
 n_epochs = opt.num_epoch
 random_seed = opt.random_seed
 actor_net_lr = opt.actor_net_lr

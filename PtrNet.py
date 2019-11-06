@@ -3,9 +3,9 @@ import torch.nn as nn
 from torch.nn import Parameter
 import math
 import numpy as np
-# import os
-#
-# os.environ['CUDA_VISIBLE_DEVICES'] = '5'
+import os
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '6'
 
 
 class Encoder(nn.Module):
@@ -190,7 +190,10 @@ class Decoder(nn.Module):
 
     def apply_mask_to_logits(self, logits, mask, prev_idxs):
         if mask is None:
-            mask = torch.zeros(logits.size()).bool()  # dtype=torch.uint8
+            if torch.version == '1.3.0':
+                mask = torch.zeros(logits.size()).bool()
+            else:
+                mask = torch.zeros(logits.size()).byte()
             if self.use_cuda:
                 mask = mask.cuda()
 
