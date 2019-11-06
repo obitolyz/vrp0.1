@@ -34,8 +34,8 @@ parser.add_argument('--disable_tensorboard', default=False, type=str2bool)
 
 opt = parser.parse_args()
 
-os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device
-# torch.cuda.set_device(0)
+# os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device
+torch.cuda.set_device(int(opt.cuda_device))
 
 # parameters
 batch_size = opt.batch_size
