@@ -6,15 +6,50 @@ from PtrNet import NeuralCombOptRL
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
+import argparse
 import numpy as np
 
 np.set_printoptions(suppress=True, threshold=np.inf)
 
+
+def str2bool(v):
+    return v.lower() in ('true', '1')
+
+
+parser = argparse.ArgumentParser(description='vrptw with RL')
+parser.add_argument('--dist_coef', default=1.0, type=float)
+parser.add_argument('--over_cap_coef', default=0.1, type=float)
+parser.add_argument('--over_time_coef', default=0.1, type=float)
+parser.add_argument('--cuda_device', default='0', type=str)
+parser.add_argument('--num_epoch', default=100, type=int)
+parser.add_argument('--num_node', default=21, type=int)
+parser.add_argument('--batch_size', default=128, type=int)
+parser.add_argument('--train_size', default=12800, type=int)
+parser.add_argument('--actor_net_lr', default=1e-3, type=float)
+parser.add_argument('--critic_net_lr', default=1e-3, type=float)
+parser.add_argument('--random_seed', default=111, type=int)
+parser.add_argument('--use_cuda', default=True, type=str2bool)
+parser.add_argument('--load_path', default='', type=str)
+parser.add_argument('--disable_tensorboard', default=False, type=str2bool)
+
+opt = parser.parse_args()
+
+os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device
+# torch.cuda.set_device(0)
+
 # parameters
-batch_size = 128
-train_size = batch_size * 1000
+batch_size = opt.batch_size
+train_size = opt.train_size
+seq_len = opt.num_node  # service_num and depot num
+n_epochs = opt.num_epoch
+random_seed = opt.random_seed
+actor_net_lr = opt.actor_net_lr
+critic_net_lr = opt.critic_net_lr
+use_cuda = opt.use_cuda
+load_path = opt.load_path  # model path
+disable_tensorboard = opt.disable_tensorboard
+
 val_size = 1000
-seq_len = 21  # service_num and depot num
 input_dim = 2
 embedding_dim = 128
 hidden_dim = 128
@@ -25,22 +60,15 @@ n_process_blocks = 3
 n_glimpses = 1
 use_tanh = True
 C = 10  # tanh exploration
-n_epochs = 100
-use_cuda = True
-random_seed = 111
 is_train = True
 beam_size = 1  # if set B=1 then the technique is same as greedy search
-actor_net_lr = 1e-3
-critic_net_lr = 1e-3
-disable_tensorboard = False
-load_path = ''
-output_dir = 'vrp_model_128k/'
-log_dir = 'runs/'
+output_dir = 'vrp_model/dist_{}_over_cap_{}_over_time_{}'.format(opt.dist_coef, opt.over_cap_coef, opt.over_time_coef)
+log_dir = 'runs/dist_{}_over_cap_{}_over_time_{}'.format(opt.dist_coef, opt.over_cap_coef, opt.over_time_coef)
 
 torch.manual_seed(random_seed)
 
 if not disable_tensorboard:
-    writer = SummaryWriter(os.path.join(log_dir, 'vrp_128k'))
+    writer = SummaryWriter(log_dir)
 
 training_dataset = Data_Generator.VRPDataset(node_num=seq_len, num_samples=train_size)
 # val_dataset = Data_Generator.VRPDataset(filename='./data/tsp/tsp20_test.txt')   # if specify filename, other arguments not required
@@ -108,7 +136,7 @@ def train_one_epoch(i):
         logprobs = sum([torch.log(prob) for prob in probs])
         # clamp any -inf's to 0 to throw away this tour
         # logprobs[(logprobs < -1000).detach()] = 0.  # means log p_(\theta)(π|s)
-        logprobs = torch.clamp(logprobs, min=-1000)
+        logprobs = torch.clamp(logprobs, min=-10000)
 
         # multiply each time step by the advanrate
         reinforce = advantage * logprobs
@@ -190,7 +218,8 @@ def train_model():
         if is_train:
             model.actor_net.decoder.decode_type = 'stochastic'
             print('Saving model...epoch-{}.pt'.format(i))
-            torch.save(model.state_dict(), os.path.join(save_dir, '{}-D-{:.6f}-pc-{:.6f}-pt-{:.6f}.pt'.format(i, res[0], res[1], res[2])))
+            torch.save(model.state_dict(),
+                       os.path.join(save_dir, '{}-D-{:.6f}-pc-{:.6f}-pt-{:.6f}.pt'.format(i, res[0], res[1], res[2])))
 
 
 if __name__ == '__main__':

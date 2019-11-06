@@ -3,6 +3,9 @@ import torch.nn as nn
 from torch.nn import Parameter
 import math
 import numpy as np
+# import os
+#
+# os.environ['CUDA_VISIBLE_DEVICES'] = '5'
 
 
 class Encoder(nn.Module):
@@ -187,7 +190,7 @@ class Decoder(nn.Module):
 
     def apply_mask_to_logits(self, logits, mask, prev_idxs):
         if mask is None:
-            mask = torch.zeros(logits.size()).byte()  # dtype=torch.uint8
+            mask = torch.zeros(logits.size()).bool()  # dtype=torch.uint8
             if self.use_cuda:
                 mask = mask.cuda()
 
@@ -204,7 +207,7 @@ class Decoder(nn.Module):
             for i in range(maskk.size(0)):
                 if prev_idxs[i] == 0 and 0 in maskk[i, 1:]:
                     maskk[i, 0] = 1
-            logits.masked_fill_(maskk, -np.inf)
+            logits.masked_fill_(maskk, -np.inf)   # nondifferentiable?
 
         return logits, maskk
 
@@ -576,7 +579,7 @@ class NeuralCombOptRL(nn.Module):
 
         C1 = 1
         C2 = 1e-1
-        C3 = 0.1
+        C3 = 0.2
         cff = torch.FloatTensor([C1, C2, C3])
         if self.use_cuda:
             cff = cff.cuda()
