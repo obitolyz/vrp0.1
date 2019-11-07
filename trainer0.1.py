@@ -19,8 +19,8 @@ def str2bool(v):
 parser = argparse.ArgumentParser(description='vrptw with RL')
 parser.add_argument('--dist_coef', default=1.0, type=float)
 parser.add_argument('--over_cap_coef', default=0.1, type=float)
-parser.add_argument('--over_time_coef', default=0.1, type=float)
-parser.add_argument('--cuda_device', default='5', type=str)
+parser.add_argument('--over_time_coef', default=0.1, type=float)  ##
+parser.add_argument('--cuda_device_id', default=0, type=int)
 parser.add_argument('--num_epoch', default=100, type=int)
 parser.add_argument('--num_node', default=21, type=int)
 parser.add_argument('--batch_size', default=128, type=int)
@@ -34,20 +34,23 @@ parser.add_argument('--disable_tensorboard', default=False, type=str2bool)
 
 opt = parser.parse_args()
 
-# os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device
-torch.cuda.set_device(int(opt.cuda_device))
+# os.environ['CUDA_VISIBLE_DEVICES'] = opt.cuda_device_id
+# torch.cuda.set_device(int(opt.cuda_device))
+device = torch.device("cuda:{}".format(opt.cuda_device_id) if (torch.cuda.is_available() and opt.use_cuda) else "cpu")
 
 # parameters
 batch_size = opt.batch_size
 train_size = opt.train_size
-seq_len = opt.num_node   # service_num and depot num
+seq_len = opt.num_node  # service_num and depot num
 n_epochs = opt.num_epoch
 random_seed = opt.random_seed
 actor_net_lr = opt.actor_net_lr
 critic_net_lr = opt.critic_net_lr
-use_cuda = opt.use_cuda
 load_path = opt.load_path  # model path
 disable_tensorboard = opt.disable_tensorboard
+dist_coef = opt.dist_coef
+over_cap_coef = opt.over_cap_coef
+over_time_coef = opt.over_time_coef
 
 val_size = 1000
 input_dim = 2
@@ -65,13 +68,11 @@ beam_size = 1  # if set B=1 then the technique is same as greedy search
 output_dir = 'vrp_model/dist_{}_over_cap_{}_over_time_{}'.format(opt.dist_coef, opt.over_cap_coef, opt.over_time_coef)
 log_dir = 'runs/dist_{}_over_cap_{}_over_time_{}'.format(opt.dist_coef, opt.over_cap_coef, opt.over_time_coef)
 
-torch.manual_seed(random_seed)
-
 if not disable_tensorboard:
     writer = SummaryWriter(log_dir)
 
 training_dataset = Data_Generator.VRPDataset(node_num=seq_len, num_samples=train_size)
-# val_dataset = Data_Generator.VRPDataset(filename='./data/tsp/tsp20_test.txt')   # if specify filename, other arguments not required
+# val_dataset = Data_Generator.VRPDataset(node_num=seq_len, num_samples=val_size)
 training_dataloader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, num_workers=1)
 # validation_dataloader = DataLoader(val_dataset, batch_size=1, shuffle=False, num_workers=1)
 
@@ -85,8 +86,11 @@ model = NeuralCombOptRL(embedding_dim,
                         use_tanh,
                         beam_size,
                         is_train,
-                        use_cuda,
+                        device,
                         vehicle_init_capacity,
+                        dist_coef,
+                        over_cap_coef,
+                        over_time_coef,
                         p_dim,
                         R)
 
@@ -108,9 +112,8 @@ critic_mse = torch.nn.MSELoss()
 critic_optim = optim.Adam(model.critic_net.parameters(), lr=critic_net_lr)
 actor_optim = optim.Adam(model.actor_net.parameters(), lr=actor_net_lr)
 
-if use_cuda:
-    model = model.cuda()
-    critic_mse = critic_mse.cuda()
+model = model.to(device)
+critic_mse = critic_mse.to(device)
 
 step = 0
 val_step = 0
@@ -125,8 +128,7 @@ def train_one_epoch(i):
 
     # sample_batch is [batch_size x sourceL x input_dim]
     for batch_id, sample_batch in enumerate(tqdm(training_dataloader, disable=False)):
-        if use_cuda:
-            sample_batch = sample_batch.cuda()
+        sample_batch = sample_batch.to(device)
         R, b, probs, actions_idxs, dist_pc_pt = model(sample_batch)
 
         advantage = R - b  # means L(π|s) - b(s)
@@ -187,8 +189,7 @@ def train_one_epoch(i):
 #     model.eval()
 #
 #     for batch_id, val_batch in enumerate(tqdm(validation_dataloader, disable=False)):
-#         if use_cuda:
-#             val_batch = val_batch.cuda()
+#         val_batch = val_batch.to(device)
 #
 #         R, v, probs, actions, action_idxs = model(val_batch)
 #

@@ -13,11 +13,11 @@ class Encoder(nn.Module):
     """Maps a graph represented as an input sequence to a hidden vector
     """
 
-    def __init__(self, input_dim, hidden_dim, use_cuda):
+    def __init__(self, input_dim, hidden_dim, device):
         super(Encoder, self).__init__()
         self.hidden_dim = hidden_dim
         self.lstm = nn.LSTM(input_dim, hidden_dim)
-        self.use_cuda = use_cuda
+        self.device = device
         self.enc_init_state = self.init_hidden(hidden_dim)
 
     def forward(self, x, hidden):
@@ -28,15 +28,13 @@ class Encoder(nn.Module):
     def init_hidden(self, hidden_dim):
         """Trainable initial hidden state"""
         enc_init_hx = Parameter(torch.zeros(hidden_dim), requires_grad=False)
-        if self.use_cuda:
-            enc_init_hx = enc_init_hx.cuda()
+        enc_init_hx = enc_init_hx.to(self.device)
 
         # enc_init_hx.uniform_(-(1. / math.sqrt(hidden_dim)),
         #        1. / math.sqrt(hidden_dim))
 
         enc_init_cx = Parameter(torch.zeros(hidden_dim), requires_grad=False)
-        if self.use_cuda:
-            enc_init_cx = enc_init_cx.cuda()
+        enc_init_cx = enc_init_cx.to(self.device)
 
         # enc_init_cx = nn.Parameter(enc_init_cx)
         # enc_init_cx.uniform_(-(1. / math.sqrt(hidden_dim)),
@@ -45,9 +43,9 @@ class Encoder(nn.Module):
 
 
 # class Struct2Vec(nn.Module):
-#     def __init__(self, node_num, use_cuda, p_dim, R):
+#     def __init__(self, node_num, device, p_dim, R):
 #         super(Struct2Vec, self).__init__()
-#         self.use_cuda = use_cuda
+#         self.device = device
 #         self.node_num = node_num
 #         self.p_dim = p_dim
 #         self.R = R
@@ -72,8 +70,7 @@ class Encoder(nn.Module):
 #         N = self.node_num
 #         mu = torch.zeros(N, batch_size, self.p_dim)
 #         mu_null = torch.zeros(N, batch_size, self.p_dim)
-#         if self.use_cuda:
-#             mu = mu.cuda()
+#         mu = mu.to(self.device)
 #             mu_null = mu_null.cuda()
 #         for _ in range(self.R):
 #             for i in range(N):
@@ -88,9 +85,9 @@ class Encoder(nn.Module):
 #         return mu
 
 class Struct2Vec(nn.Module):
-    def __init__(self, node_num, use_cuda, p_dim, R):
+    def __init__(self, node_num, device, p_dim, R):
         super(Struct2Vec, self).__init__()
-        self.use_cuda = use_cuda
+        self.device = device
         self.node_num = node_num
 
         self.theta_service = nn.Linear(5, p_dim)  # for service node
@@ -117,7 +114,7 @@ class Struct2Vec(nn.Module):
 class Attention(nn.Module):
     """A generic attention module for a decoder in seq2seq"""
 
-    def __init__(self, dim, use_tanh=False, C=10, use_cuda=True):
+    def __init__(self, dim, use_tanh, C, device):
         super(Attention, self).__init__()
         self.use_tanh = use_tanh
         self.project_query = nn.Linear(dim, dim)
@@ -126,8 +123,7 @@ class Attention(nn.Module):
         self.tanh = nn.Tanh()
 
         v = torch.FloatTensor(dim)
-        if use_cuda:
-            v = v.cuda()
+        v = v.to(device)
         self.v = nn.Parameter(v, requires_grad=True)
         self.v.data.uniform_(-1. / math.sqrt(dim), 1. / math.sqrt(dim))
 
@@ -166,9 +162,9 @@ class Decoder(nn.Module):
                  tanh_exploration,
                  use_tanh,
                  decode_type,
-                 n_glimpses=1,
-                 beam_size=0,
-                 use_cuda=True):
+                 n_glimpses,
+                 beam_size,
+                 device):
         super(Decoder, self).__init__()
 
         self.embedding_dim = embedding_dim
@@ -177,7 +173,7 @@ class Decoder(nn.Module):
         self.seq_len = seq_len
         self.decode_type = decode_type
         self.beam_size = beam_size
-        self.use_cuda = use_cuda
+        self.device = device
 
         self.vehicle_init_capacity = vehicle_init_capacity
 
@@ -185,8 +181,8 @@ class Decoder(nn.Module):
         self.input_weights = nn.Linear(embedding_dim, 4 * hidden_dim)
         self.hidden_weights = nn.Linear(hidden_dim, 4 * hidden_dim)
 
-        self.pointer = Attention(hidden_dim, use_tanh=use_tanh, C=tanh_exploration, use_cuda=self.use_cuda)
-        self.glimpse = Attention(hidden_dim, use_tanh=False, use_cuda=self.use_cuda)
+        self.pointer = Attention(hidden_dim, use_tanh=use_tanh, C=tanh_exploration, device=device)
+        self.glimpse = Attention(hidden_dim, use_tanh=False, C=tanh_exploration, device=device)
         self.sm = nn.Softmax(dim=1)
 
     def apply_mask_to_logits(self, logits, mask, prev_idxs):
@@ -195,8 +191,7 @@ class Decoder(nn.Module):
                 mask = torch.zeros(logits.size()).bool()
             else:
                 mask = torch.zeros(logits.size()).byte()
-            if self.use_cuda:
-                mask = mask.cuda()
+            mask = mask.to(self.device)
 
         maskk = mask.clone()
 
@@ -211,7 +206,7 @@ class Decoder(nn.Module):
             for i in range(maskk.size(0)):
                 if prev_idxs[i] == 0 and 0 in maskk[i, 1:]:
                     maskk[i, 0] = 1
-            logits.masked_fill_(maskk, -np.inf)   # nondifferentiable?
+            logits.masked_fill_(maskk, -np.inf)  # nondifferentiable?
 
         return logits, maskk
 
@@ -253,20 +248,13 @@ class Decoder(nn.Module):
             logits, logit_mask = self.apply_mask_to_logits(logits, logit_mask, prev_idxs)
             probs = self.sm(logits)
 
-            # replace = torch.zeros(probs.size())
-            # replace[:, 0] = 1
-            # if self.use_cuda:
-            #     replace = replace.cuda()
-            # probs = torch.where(probs != probs, replace, probs)
-
             return hy, cy, probs, logit_mask
 
-        device = torch.device('cuda') if self.use_cuda else torch.device('cpu')
         batch_size = context.size(1)
         outputs = []
         selections = []
         mask = None
-        idxs = torch.LongTensor([0] * batch_size).to(device)  #
+        idxs = torch.LongTensor([0] * batch_size).to(self.device)  #
         # selections.append(idxs)  #
         # choose_i = torch.LongTensor([0]).to(device)
         # prob_0 = torch.zeros(batch_size, self.seq_len).to(device)
@@ -276,14 +264,12 @@ class Decoder(nn.Module):
 
         # record (remaining capacity, current time, distance, penalty_capacity, penalty_time)
         rc_ct_d_pc_pt = torch.FloatTensor([self.vehicle_init_capacity, 0, 0, 0, 0]).repeat(batch_size, 1).detach_()
-        if self.use_cuda:
-            rc_ct_d_pc_pt = rc_ct_d_pc_pt.cuda()
+        rc_ct_d_pc_pt = rc_ct_d_pc_pt.to(self.device)
 
         if self.decode_type == 'stochastic':
             # at most twice (seq_len - 1), seq_len: service_num + depot_num
             for _ in range((self.seq_len - 1) * 2):
-                if self.use_cuda:
-                    decoder_input = decoder_input.cuda()
+                decoder_input = decoder_input.to(self.device)
                 hx, cx, probs, mask = recurrence(decoder_input, hidden, mask, idxs)
                 hidden = (hx, cx)
                 # select the next inputs for the decoder [batch_size x hidden_dim]
@@ -353,8 +339,7 @@ class Decoder(nn.Module):
 
         rc_ct_d_pc_pt[:, 2] = rc_ct_d_pc_pt[:, 2] + distance  # cumulative distance
         reset_rc_ct = torch.FloatTensor([self.vehicle_init_capacity, 0])
-        if self.use_cuda:
-            reset_rc_ct = reset_rc_ct.cuda()
+        reset_rc_ct = reset_rc_ct.to(self.device)
         rc_ct_d_pc_pt[zero_idxs, :2] = reset_rc_ct  # reset capacity and time
 
         # sels = torch.zeros(batch_size, self.embedding_dim + 2)
@@ -377,22 +362,22 @@ class PointerNetwork(nn.Module):
                  tanh_exploration,
                  use_tanh,
                  beam_size,
-                 use_cuda,
+                 device,
                  vehicle_init_capacity,
                  p_dim,
                  R):
         super(PointerNetwork, self).__init__()
 
-        self.use_cuda = use_cuda
+        self.device = device
         self.vehicle_init_capacity = vehicle_init_capacity
         self.embedding_dim = embedding_dim
 
-        self.s2v = Struct2Vec(seq_len, use_cuda, p_dim, R)
+        self.s2v = Struct2Vec(seq_len, device, p_dim, R)
 
         self.encoder = Encoder(
             embedding_dim,
             hidden_dim,
-            use_cuda)
+            device)
 
         self.decoder = Decoder(
             embedding_dim,
@@ -404,12 +389,11 @@ class PointerNetwork(nn.Module):
             decode_type='stochastic',
             n_glimpses=n_glimpses,
             beam_size=beam_size,
-            use_cuda=use_cuda)
+            device=device)
 
         # Trainable initial hidden states
         dec_in_0 = torch.FloatTensor(embedding_dim)
-        if use_cuda:
-            dec_in_0 = dec_in_0.cuda()
+        dec_in_0 = dec_in_0.to(device)
 
         self.decoder_in_0 = nn.Parameter(dec_in_0)
         self.decoder_in_0.data.uniform_(-1. / math.sqrt(embedding_dim), 1. / math.sqrt(embedding_dim))
@@ -458,7 +442,7 @@ class CriticNetwork(nn.Module):
                  n_process_blocks,
                  tanh_exploration,
                  use_tanh,
-                 use_cuda,
+                 device,
                  seq_len,
                  p_dim,
                  R):
@@ -467,16 +451,16 @@ class CriticNetwork(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_process_blocks = n_process_blocks
 
-        self.s2v = Struct2Vec(seq_len, use_cuda, p_dim, R)
+        self.s2v = Struct2Vec(seq_len, device, p_dim, R)
 
         self.encoder = Encoder(embedding_dim,
                                hidden_dim,
-                               use_cuda)
+                               device)
 
         self.process_block = Attention(hidden_dim,
                                        use_tanh=use_tanh,
                                        C=tanh_exploration,
-                                       use_cuda=use_cuda)
+                                       device=device)
         self.sm = nn.Softmax(dim=1)
         self.decoder = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -526,13 +510,19 @@ class NeuralCombOptRL(nn.Module):
                  use_tanh,
                  beam_size,
                  is_train,
-                 use_cuda,
+                 device,
                  vehicle_init_capacity,
+                 dist_coef,
+                 over_cap_coef,
+                 over_time_coef,
                  p_dim,
                  R):
         super(NeuralCombOptRL, self).__init__()
         self.is_train = is_train
-        self.use_cuda = use_cuda
+        self.device = device
+        self.dist_coef = dist_coef
+        self.over_cap_coef = over_cap_coef
+        self.over_time_coef = over_time_coef
 
         self.actor_net = PointerNetwork(
             embedding_dim,
@@ -542,7 +532,7 @@ class NeuralCombOptRL(nn.Module):
             tanh_exploration,
             use_tanh,
             beam_size,
-            use_cuda,
+            device,
             vehicle_init_capacity,
             p_dim,
             R)
@@ -554,7 +544,7 @@ class NeuralCombOptRL(nn.Module):
             n_process_blocks,
             tanh_exploration,
             False,
-            use_cuda,
+            device,
             seq_len,
             p_dim,
             R)
@@ -581,12 +571,8 @@ class NeuralCombOptRL(nn.Module):
             # return the list of len sourceL of [batch_size x sourceL]
             probs = probs_
 
-        C1 = 1
-        C2 = 1e-1
-        C3 = 0.2
-        cff = torch.FloatTensor([C1, C2, C3])
-        if self.use_cuda:
-            cff = cff.cuda()
+        cff = torch.FloatTensor([self.dist_coef, self.over_cap_coef, self.over_time_coef])
+        cff = cff.to(self.device)
 
         R = torch.mm(dist_pc_pt, cff.view(-1, 1)).squeeze(1)  # calc reward
         # get the critic value fn estimates for the baseline

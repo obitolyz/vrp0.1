@@ -17,7 +17,7 @@ class VRPDataset(Dataset):
         random.seed(random_seed)
         self.dataset = []
 
-        for _ in tqdm(range(num_samples)):
+        for _ in tqdm(range(num_samples), disable=False):
             sample = list()
             sample.append(torch.FloatTensor([random.uniform(0, 1), random.uniform(0, 1), 0, 0, 0]))
             for i in range(node_num - 1):
