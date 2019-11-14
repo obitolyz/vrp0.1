@@ -6,7 +6,7 @@ import numpy as np
 import os
 
 # os.environ['CUDA_VISIBLE_DEVICES'] = '6'
-torch.cuda.set_device(5)
+# torch.cuda.set_device(5)
 
 
 class Encoder(nn.Module):

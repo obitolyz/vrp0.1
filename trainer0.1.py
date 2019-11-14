@@ -42,7 +42,7 @@ device = torch.device("cuda:{}".format(opt.cuda_device_id) if (torch.cuda.is_ava
 batch_size = opt.batch_size
 train_size = opt.train_size
 seq_len = opt.num_node  # service_num and depot num
-n_epochs = opt.num_epoch
+num_epoch = opt.num_epoch
 random_seed = opt.random_seed
 actor_net_lr = opt.actor_net_lr
 critic_net_lr = opt.critic_net_lr
@@ -60,7 +60,7 @@ vehicle_init_capacity = 30
 p_dim = 128  # as same to embedding_dim
 R = 4
 n_process_blocks = 3
-n_glimpses = 1
+n_glimpses = 0
 use_tanh = True
 C = 10  # tanh exploration
 is_train = True
@@ -118,7 +118,6 @@ critic_mse = critic_mse.to(device)
 step = 0
 val_step = 0
 log_step = 5
-epoch = 1000
 
 
 def train_one_epoch(i):
@@ -210,7 +209,8 @@ def train_one_epoch(i):
 
 
 def train_model():
-    for i in range(epoch):
+    begin_num = 100
+    for i in range(begin_num, begin_num + num_epoch):
         if is_train:
             res = train_one_epoch(i)
         # Use beam search decoding for validation
